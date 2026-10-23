@@ -1337,7 +1337,9 @@ function SafetyMap({
                     700,
                 }}
               >
-                {routeStatus}
+                {routeInfo
+  ? "✓ LIVE RESCUE ROUTE ACTIVE"
+  : routeStatus}
               </div>
             </div>
 
