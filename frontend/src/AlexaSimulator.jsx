@@ -88,7 +88,7 @@ function AlexaSimulator({
       }
 
       const result = await fetch(
-        "http://localhost:5002/alexa-command",
+        "https://beacon250-alexa-gateway.onrender.com/alexa-command",
         {
           method: "POST",
 
