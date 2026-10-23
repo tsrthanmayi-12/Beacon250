@@ -229,12 +229,12 @@ app.get("/", (req, res) => {
   res.send("Beacon250 MCP Server is running");
 });
 
-const PORT = 5001;
+const PORT = process.env.PORT || 5001;
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log("--------------------------------");
   console.log("Beacon250 MCP Server is running");
-  console.log(`http://localhost:${PORT}`);
-  console.log(`MCP endpoint: http://localhost:${PORT}/mcp`);
+  console.log(`Port: ${PORT}`);
+  console.log(`MCP endpoint: /mcp`);
   console.log("--------------------------------");
 });
