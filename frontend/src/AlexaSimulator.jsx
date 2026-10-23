@@ -9,11 +9,13 @@ function AlexaSimulator({
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
 
-  const getCurrentLocation = () => {
-    return new Promise((resolve, reject) => {
+  const getCurrentLocation = () =>
+    new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
         reject(
-          new Error("Geolocation is not supported.")
+          new Error(
+            "Geolocation is not supported."
+          )
         );
         return;
       }
@@ -43,21 +45,25 @@ function AlexaSimulator({
         }
       );
     });
-  };
 
   const sendCommand = async (
     spokenCommand = command
   ) => {
     const finalCommand =
-      spokenCommand.trim();
+      String(spokenCommand || "").trim();
 
-    if (!finalCommand) return;
+    if (!finalCommand) {
+      return;
+    }
 
     setCommand(finalCommand);
     setLoading(true);
     setResponse("");
 
     try {
+      const lowerCommand =
+        finalCommand.toLowerCase();
+
       const emergencyWords = [
         "help",
         "sos",
@@ -67,13 +73,12 @@ function AlexaSimulator({
         "save me",
         "followed",
         "following me",
+        "need help",
       ];
 
       const isEmergency =
         emergencyWords.some((word) =>
-          finalCommand
-            .toLowerCase()
-            .includes(word)
+          lowerCommand.includes(word)
         );
 
       let currentLocation = null;
@@ -87,6 +92,19 @@ function AlexaSimulator({
           await getCurrentLocation();
       }
 
+      /*
+        IMPORTANT:
+        Use the same deterministic emergency
+        command as the working SOS flow.
+
+        We still display the user's actual
+        spoken command in the Alexa UI.
+      */
+      const gatewayCommand =
+        isEmergency
+          ? "SOS emergency help"
+          : finalCommand;
+
       const result = await fetch(
         "https://beacon250-alexa-gateway.onrender.com/alexa-command",
         {
@@ -98,59 +116,60 @@ function AlexaSimulator({
           },
 
           body: JSON.stringify({
-            text: finalCommand,
+            text: gatewayCommand,
 
             latitude:
               currentLocation?.latitude,
 
             longitude:
               currentLocation?.longitude,
-            requesterName: requesterName,
+
+            requesterName:
+              requesterName || "House A",
           }),
         }
       );
 
-      const data = await result.json();
-      if (
-  onEmergencyActivated &&
-  navigator.geolocation
-) {
-  navigator.geolocation.getCurrentPosition(
-    (currentPosition) => {
-      onEmergencyActivated(
-        {
-          latitude:
-            currentPosition.coords.latitude,
+      if (!result.ok) {
+        const errorText =
+          await result.text();
 
-          longitude:
-            currentPosition.coords.longitude,
+        throw new Error(
+          `Alexa gateway error ${result.status}: ${errorText}`
+        );
+      }
 
-          accuracy:
-            currentPosition.coords.accuracy,
-        },
+      const data =
+        await result.json();
 
-        data.response
+      setResponse(
+        data.response ||
+          "Beacon250 request processed."
       );
-    },
 
-    (error) => {
+      /*
+        Only activate the victim UI when
+        this was actually an emergency.
+
+        Reuse the location we already obtained.
+        Do NOT request geolocation a second time.
+      */
+      if (
+        isEmergency &&
+        currentLocation &&
+        onEmergencyActivated
+      ) {
+        onEmergencyActivated(
+          currentLocation,
+          data.response ||
+            "Beacon250 emergency network activated."
+        );
+      }
+    } catch (error) {
       console.error(
-        "Alexa callback location error:",
+        "Alexa command error:",
         error
       );
-    },
-
-    {
-      enableHighAccuracy: true,
-      timeout: 20000,
-      maximumAge: 0,
-    }
-  );
-}
-
-      setResponse(data.response);
-    } catch (error) {
-      console.error(error);
 
       setResponse(
         "I could not connect to Beacon250 or access your location."
@@ -167,8 +186,9 @@ function AlexaSimulator({
 
     if (!SpeechRecognition) {
       setResponse(
-        "Voice recognition is not supported in this browser. Please use Chrome or Microsoft Edge."
+        "Voice recognition is not supported in this browser. Please use Google Chrome or Microsoft Edge."
       );
+
       return;
     }
 
@@ -178,17 +198,20 @@ function AlexaSimulator({
     recognition.lang = "en-IN";
     recognition.continuous = false;
     recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
       setListening(true);
+
       setResponse(
-        "Listening... say: Alexa, I need help"
+        'Listening... say "Alexa, I need help"'
       );
     };
 
     recognition.onresult = (event) => {
       const transcript =
-        event.results[0][0].transcript;
+        event.results?.[0]?.[0]
+          ?.transcript || "";
 
       console.log(
         "Voice command:",
@@ -206,9 +229,25 @@ function AlexaSimulator({
         event.error
       );
 
-      setResponse(
-        "I could not understand the voice command. Please try again."
-      );
+      if (
+        event.error ===
+        "not-allowed"
+      ) {
+        setResponse(
+          "Microphone permission is blocked. Please allow microphone access in your browser."
+        );
+      } else if (
+        event.error ===
+        "no-speech"
+      ) {
+        setResponse(
+          'No speech detected. Please try again and say "Alexa, I need help".'
+        );
+      } else {
+        setResponse(
+          "I could not understand the voice command. Please try again."
+        );
+      }
 
       setListening(false);
     };
@@ -217,19 +256,38 @@ function AlexaSimulator({
       setListening(false);
     };
 
-    recognition.start();
+    try {
+      recognition.start();
+    } catch (error) {
+      console.error(
+        "Could not start speech recognition:",
+        error
+      );
+
+      setListening(false);
+
+      setResponse(
+        "Voice recognition could not start. Please try again or use the text command."
+      );
+    }
   };
 
   return (
     <div
       style={{
         minHeight: "100vh",
+
         background:
           "linear-gradient(135deg, #07111f, #102a43)",
+
         color: "white",
+
         display: "flex",
+
         justifyContent: "center",
+
         alignItems: "center",
+
         fontFamily:
           "Arial, sans-serif",
       }}
@@ -237,10 +295,14 @@ function AlexaSimulator({
       <div
         style={{
           width: "420px",
+
           padding: "40px",
+
           borderRadius: "24px",
+
           background:
             "rgba(255,255,255,0.08)",
+
           textAlign: "center",
         }}
       >
@@ -271,12 +333,22 @@ function AlexaSimulator({
           }
           style={{
             width: "100%",
+
             padding: "18px",
+
             border: "none",
+
             borderRadius: "14px",
+
             fontSize: "17px",
+
             fontWeight: "bold",
-            cursor: "pointer",
+
+            cursor:
+              listening || loading
+                ? "wait"
+                : "pointer",
+
             marginBottom: "15px",
           }}
         >
@@ -288,16 +360,34 @@ function AlexaSimulator({
         <input
           value={command}
           onChange={(event) =>
-            setCommand(event.target.value)
+            setCommand(
+              event.target.value
+            )
           }
+          onKeyDown={(event) => {
+            if (
+              event.key ===
+                "Enter" &&
+              !loading
+            ) {
+              sendCommand();
+            }
+          }}
           placeholder='Or type "Alexa, I need help"'
           style={{
             width: "100%",
-            boxSizing: "border-box",
+
+            boxSizing:
+              "border-box",
+
             padding: "15px",
+
             borderRadius: "12px",
+
             border: "none",
+
             fontSize: "16px",
+
             marginBottom: "15px",
           }}
         />
@@ -309,12 +399,20 @@ function AlexaSimulator({
           disabled={loading}
           style={{
             width: "100%",
+
             padding: "15px",
+
             border: "none",
+
             borderRadius: "12px",
+
             fontWeight: "bold",
+
             fontSize: "16px",
-            cursor: "pointer",
+
+            cursor: loading
+              ? "wait"
+              : "pointer",
           }}
         >
           {loading
@@ -326,14 +424,20 @@ function AlexaSimulator({
           <div
             style={{
               marginTop: "25px",
+
               padding: "18px",
+
               background:
                 "rgba(255,255,255,0.1)",
+
               borderRadius: "12px",
+
               lineHeight: "1.5",
             }}
           >
-            <strong>Alexa+</strong>
+            <strong>
+              Alexa+
+            </strong>
 
             <p>{response}</p>
           </div>
