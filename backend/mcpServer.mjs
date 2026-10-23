@@ -6,7 +6,7 @@ import { io } from "socket.io-client";
 
 const app = express();
 app.use(express.json());
-const beaconSocket = io("http://localhost:5000");
+const beaconSocket = io("https://beacon250-backend.onrender.com");
 
 beaconSocket.on("connect", () => {
   console.log("Connected to Beacon250 backend");
