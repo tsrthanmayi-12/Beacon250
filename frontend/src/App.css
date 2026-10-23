@@ -1,0 +1,388 @@
+.locationCard {
+  margin-top: 25px;
+  padding: 20px;
+
+  border-radius: 14px;
+
+  background: white;
+
+  color: #111827;
+
+  text-align: left;
+
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
+}
+
+.locationCard p {
+  margin: 8px 0;
+}
+.respondersSection {
+  margin-top: 25px;
+  width: 100%;
+}
+
+.respondersSection h3 {
+  color: #111827;
+  margin-bottom: 15px;
+}
+
+.responderCard {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  padding: 16px;
+  margin-bottom: 10px;
+
+  border-radius: 12px;
+
+  background: white;
+
+  color: #111827;
+
+  text-align: left;
+}
+
+.responderCard p {
+  margin: 5px 0 0 0;
+
+  font-size: 14px;
+
+  color: #6b7280;
+}
+
+.nearby {
+  border-left: 6px solid #22c55e;
+}
+
+.tooFar {
+  border-left: 6px solid #ef4444;
+
+  opacity: 0.65;
+}
+
+.distanceInfo {
+  display: flex;
+  flex-direction: column;
+
+  text-align: right;
+
+  gap: 5px;
+}
+.neighborPage {
+  min-height: 100vh;
+
+  display: flex;
+  flex-direction: column;
+
+  align-items: center;
+  justify-content: center;
+
+  text-align: center;
+
+  padding: 30px;
+
+  background: #f5f7fb;
+}
+
+.neighborWaiting {
+  font-size: 20px;
+  color: #6b7280;
+
+  margin-top: 20px;
+}
+
+.neighborEmergency {
+  background: #b00020;
+  color: white;
+}
+
+.bigAlertIcon {
+  font-size: 90px;
+
+  animation: pulseAlert 1s infinite;
+}
+
+.alertTitle {
+  color: white;
+
+  font-size: 55px;
+
+  margin: 15px 0;
+}
+
+.alertMessage {
+  font-size: 24px;
+
+  max-width: 600px;
+}
+
+.neighborDistance {
+  margin-top: 20px;
+
+  padding: 15px 25px;
+
+  border-radius: 12px;
+
+  background: white;
+  color: #b00020;
+
+  font-size: 24px;
+  font-weight: bold;
+}
+
+.alertActions {
+  display: flex;
+
+  flex-wrap: wrap;
+
+  justify-content: center;
+
+  gap: 15px;
+
+  margin-top: 35px;
+}
+
+.alertActions button {
+  padding: 18px 25px;
+
+  border: none;
+
+  border-radius: 12px;
+
+  font-size: 18px;
+  font-weight: bold;
+
+  cursor: pointer;
+}
+
+.lightButton {
+  background: #facc15;
+}
+
+.callButton {
+  background: white;
+  color: #b00020;
+}
+
+.observeButton {
+  background: #111827;
+  color: white;
+}
+
+.privacyMessage {
+  margin-top: 30px;
+
+  font-size: 14px;
+
+  opacity: 0.8;
+}
+
+@keyframes pulseAlert {
+  0% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.15);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+.enableAlertButton {
+  margin-top: 20px;
+
+  padding: 14px 22px;
+
+  border: none;
+  border-radius: 10px;
+
+  background: #111827;
+  color: white;
+
+  font-size: 16px;
+  font-weight: bold;
+
+  cursor: pointer;
+}
+
+.soundReady {
+  margin-top: 20px;
+
+  color: #16a34a;
+
+  font-weight: bold;
+}
+
+.muteButton {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+.neighborEmergency {
+  animation: emergencyFlash 0.8s infinite;
+}
+
+@keyframes emergencyFlash {
+  0% {
+    background: #b00020;
+  }
+
+  50% {
+    background: #e00028;
+  }
+
+  100% {
+    background: #b00020;
+  }
+}
+.securityPage {
+  min-height: 100vh;
+
+  display: flex;
+  flex-direction: column;
+
+  justify-content: center;
+  align-items: center;
+
+  text-align: center;
+
+  padding: 30px;
+
+  background: #f5f7fb;
+}
+
+.securityEmergency {
+  background: #7f1d1d;
+  color: white;
+}
+
+.securityEmergency h1 {
+  color: white;
+}
+
+.respondButton {
+  margin-top: 30px;
+
+  padding: 20px 35px;
+
+  border: none;
+  border-radius: 14px;
+
+  background: #16a34a;
+  color: white;
+
+  font-size: 22px;
+  font-weight: bold;
+
+  cursor: pointer;
+}
+
+.respondButton:hover {
+  transform: scale(1.05);
+}
+
+.respondingConfirmed {
+  margin-top: 30px;
+
+  padding: 20px;
+
+  border-radius: 14px;
+
+  background: white;
+  color: #166534;
+
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.securityResponseCard {
+  margin-top: 20px;
+
+  display: flex;
+  align-items: center;
+
+  gap: 15px;
+
+  padding: 20px;
+
+  background: #dcfce7;
+
+  border-left: 6px solid #16a34a;
+  border-radius: 12px;
+
+  color: #166534;
+
+  text-align: left;
+}
+
+.securityResponseCard p {
+  margin: 5px 0 0 0;
+}
+
+.securityIcon {
+  font-size: 40px;
+}
+.safeButton {
+  margin-top: 25px;
+
+  padding: 16px 30px;
+
+  border: none;
+  border-radius: 12px;
+
+  background: #16a34a;
+  color: white;
+
+  font-size: 18px;
+  font-weight: bold;
+
+  cursor: pointer;
+}
+
+.safeButton:hover {
+  transform: scale(1.04);
+}
+
+.resolvedCard {
+  margin-top: 25px;
+
+  padding: 20px;
+
+  display: flex;
+  align-items: center;
+
+  gap: 15px;
+
+  background: #dcfce7;
+
+  border-left: 6px solid #16a34a;
+  border-radius: 12px;
+
+  color: #166534;
+
+  text-align: left;
+}
+
+.resolvedIcon {
+  width: 45px;
+  height: 45px;
+
+  border-radius: 50%;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: #16a34a;
+  color: white;
+
+  font-size: 28px;
+  font-weight: bold;
+}
+
+.resolvedCard p {
+  margin: 5px 0 0 0;
+}
