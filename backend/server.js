@@ -5,7 +5,13 @@ const { Server } = require("socket.io");
 
 const app = express();
 
-app.use(cors());
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST"],
+  })
+);
+
 app.use(express.json());
 
 const server = http.createServer(app);
@@ -19,24 +25,23 @@ const io = new Server(server, {
 
 let activeResponderNames = [];
 
-// --------------------------------
-// TEST ROUTE
-// --------------------------------
-
 app.get("/", (req, res) => {
-  res.send("Beacon250 backend is running");
+  res.json({
+    service: "Beacon250 Backend",
+    status: "running",
+  });
 });
 
-// --------------------------------
-// SOCKET.IO CONNECTION
-// --------------------------------
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    service: "Beacon250 Backend",
+    timestamp: new Date().toISOString(),
+  });
+});
 
 io.on("connection", (socket) => {
   console.log("Device connected:", socket.id);
-
-  // --------------------------------
-  // REGISTER HOUSE / SECURITY GUARD
-  // --------------------------------
 
   socket.on("register-responder", (data) => {
     const responderName = data.name;
@@ -54,10 +59,6 @@ io.on("connection", (socket) => {
       `Responder registered: ${responderName}`
     );
   });
-
-  // --------------------------------
-  // VICTIM TRIGGERS SOS
-  // --------------------------------
 
   socket.on("trigger-sos", (data) => {
     console.log("SOS RECEIVED");
@@ -107,10 +108,6 @@ io.on("connection", (socket) => {
     );
   });
 
-  // --------------------------------
-  // LIVE VICTIM LOCATION
-  // --------------------------------
-
   socket.on(
     "victim-location-update",
     (location) => {
@@ -128,10 +125,6 @@ io.on("connection", (socket) => {
       );
     }
   );
-
-  // --------------------------------
-  // SECURITY GUARD RESPONDS
-  // --------------------------------
 
   socket.on(
     "security-responding",
@@ -164,10 +157,6 @@ io.on("connection", (socket) => {
       });
     }
   );
-
-  // --------------------------------
-  // HOUSEHOLD RESPONDER RESPONDS
-  // --------------------------------
 
   socket.on(
     "responder-responding",
@@ -204,10 +193,6 @@ io.on("connection", (socket) => {
     }
   );
 
-  // --------------------------------
-  // INCIDENT RESOLVED
-  // --------------------------------
-
   socket.on(
     "incident-resolved",
     () => {
@@ -215,7 +200,8 @@ io.on("connection", (socket) => {
         "INCIDENT RESOLVED"
       );
 
-      activeResponderNames = [];
+      activeResponderNames =
+        [];
 
       io.emit(
         "incident-resolved",
@@ -230,38 +216,38 @@ io.on("connection", (socket) => {
     }
   );
 
-  // --------------------------------
-  // DEVICE DISCONNECTS
-  // --------------------------------
+  socket.on(
+    "disconnect",
+    () => {
+      console.log(
+        "Device disconnected:",
+        socket.id
+      );
+    }
+  );
+});
 
-  socket.on("disconnect", () => {
+const PORT =
+  process.env.PORT || 5000;
+
+server.listen(
+  PORT,
+  "0.0.0.0",
+  () => {
     console.log(
-      "Device disconnected:",
-      socket.id
+      "--------------------------------"
     );
-  });
-});
 
-// --------------------------------
-// START SERVER
-// --------------------------------
+    console.log(
+      "Beacon250 backend is running"
+    );
 
-const PORT = 5000;
+    console.log(
+      `Port: ${PORT}`
+    );
 
-server.listen(PORT, () => {
-  console.log(
-    "--------------------------------"
-  );
-
-  console.log(
-    "Beacon250 backend is running"
-  );
-
-  console.log(
-    `http://localhost:${PORT}`
-  );
-
-  console.log(
-    "--------------------------------"
-  );
-});
+    console.log(
+      "--------------------------------"
+    );
+  }
+);
