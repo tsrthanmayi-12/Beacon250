@@ -16,7 +16,7 @@ const mcpClient = new Client({
 
 const transport =
   new StreamableHTTPClientTransport(
-    new URL("http://localhost:5001/mcp")
+    new URL("https://beacon250-mcp.onrender.com/mcp")
   );
 
 console.log("Connecting Alexa+ Simulator to Beacon250 MCP...");
@@ -110,11 +110,11 @@ app.get("/", (req, res) => {
   res.send("Beacon250 Alexa+ Simulator Gateway is running");
 });
 
-const PORT = 5002;
+const PORT = process.env.PORT || 5002;
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log("--------------------------------");
-  console.log("Beacon250 Alexa+ Gateway running");
-  console.log(`http://localhost:${PORT}`);
+  console.log("Beacon250 Alexa Gateway is running");
+  console.log(`Port: ${PORT}`);
   console.log("--------------------------------");
 });
