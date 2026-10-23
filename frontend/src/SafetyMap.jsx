@@ -19,52 +19,202 @@ function SafetyMap({
   responders,
   responderLocation = null,
 }) {
-  const mapContainer =
-    useRef(null);
+  const mapContainer = useRef(null);
+  const mapRef = useRef(null);
 
-  const mapRef =
-    useRef(null);
+  const victimMarkerRef = useRef(null);
+  const responderMarkerRef = useRef(null);
+  const nearbyMarkersRef = useRef([]);
 
-  const victimMarkerRef =
-    useRef(null);
+  const routeRequestRef = useRef(0);
+  const routeCoordinatesRef = useRef([]);
 
-  const responderMarkerRef =
-    useRef(null);
+  const [routeInfo, setRouteInfo] =
+    useState(null);
 
-  const nearbyMarkersRef =
-    useRef([]);
+  const [routeSteps, setRouteSteps] =
+    useState([]);
 
-  const routeRequestRef =
-    useRef(0);
+  const [routeStatus, setRouteStatus] =
+    useState(
+      responderLocation
+        ? "Calculating rescue route..."
+        : ""
+    );
 
-  const [
-    routeInfo,
-    setRouteInfo,
-  ] = useState(null);
+  const [mapStatus, setMapStatus] =
+    useState("Loading satellite map...");
 
   const apiKey =
     import.meta.env
       .VITE_AWS_LOCATION_API_KEY;
 
   const region =
-    import.meta.env
-      .VITE_AWS_REGION ||
+    import.meta.env.VITE_AWS_REGION ||
     "ap-south-1";
 
-  // --------------------------------
-  // CREATE MAP ONLY ONCE
-  // --------------------------------
+  // ==================================================
+  // HELPERS
+  // ==================================================
+
+  function isValidCoordinate(value) {
+    return Number.isFinite(
+      Number(value)
+    );
+  }
+
+  function fitCoordinates(
+    coordinates,
+    options = {}
+  ) {
+    const map = mapRef.current;
+
+    if (
+      !map ||
+      !Array.isArray(coordinates) ||
+      coordinates.length < 2
+    ) {
+      return;
+    }
+
+    const bounds =
+      new maplibregl.LngLatBounds();
+
+    coordinates.forEach(
+      (coordinate) => {
+        if (
+          Array.isArray(coordinate) &&
+          coordinate.length >= 2 &&
+          isValidCoordinate(
+            coordinate[0]
+          ) &&
+          isValidCoordinate(
+            coordinate[1]
+          )
+        ) {
+          bounds.extend([
+            Number(coordinate[0]),
+            Number(coordinate[1]),
+          ]);
+        }
+      }
+    );
+
+    if (!bounds.isEmpty()) {
+      map.fitBounds(bounds, {
+        padding: 70,
+        maxZoom: 18,
+        duration: 900,
+        ...options,
+      });
+    }
+  }
+
+  function clearRoute() {
+    const map = mapRef.current;
+
+    routeCoordinatesRef.current = [];
+    setRouteInfo(null);
+    setRouteSteps([]);
+
+    if (!map) {
+      return;
+    }
+
+    const source =
+      map.getSource(
+        "walking-route"
+      );
+
+    if (source) {
+      source.setData({
+        type: "FeatureCollection",
+        features: [],
+      });
+    }
+  }
+
+  function updateRouteLayer(
+    coordinates
+  ) {
+    const map = mapRef.current;
+
+    if (
+      !map ||
+      !Array.isArray(coordinates) ||
+      coordinates.length < 2
+    ) {
+      return;
+    }
+
+    const source =
+      map.getSource(
+        "walking-route"
+      );
+
+    if (!source) {
+      return;
+    }
+
+    source.setData({
+      type: "Feature",
+      properties: {},
+      geometry: {
+        type: "LineString",
+        coordinates,
+      },
+    });
+
+    routeCoordinatesRef.current =
+      coordinates;
+
+    fitCoordinates(coordinates);
+  }
+
+  function recenterRescueRoute() {
+    if (
+      routeCoordinatesRef.current
+        .length >= 2
+    ) {
+      fitCoordinates(
+        routeCoordinatesRef.current
+      );
+
+      return;
+    }
+
+    if (responderLocation) {
+      fitCoordinates([
+        [
+          responderLocation.longitude,
+          responderLocation.latitude,
+        ],
+        [
+          longitude,
+          latitude,
+        ],
+      ]);
+    }
+  }
+
+  // ==================================================
+  // CREATE HYBRID SATELLITE MAP
+  // ==================================================
 
   useEffect(() => {
     if (
-      !Number.isFinite(latitude) ||
-      !Number.isFinite(longitude)
+      !isValidCoordinate(latitude) ||
+      !isValidCoordinate(longitude)
     ) {
       return;
     }
 
     if (!apiKey) {
       console.error(
+        "Amazon Location API key is missing."
+      );
+
+      setMapStatus(
         "Amazon Location API key is missing."
       );
 
@@ -78,8 +228,12 @@ function SafetyMap({
       return;
     }
 
+    // Hybrid =
+    // satellite imagery + roads + labels
     const styleUrl =
-      `https://maps.geo.${region}.amazonaws.com/v2/styles/Standard/descriptor?key=${apiKey}&color-scheme=Light&poi-density=VeryDense`;
+      `https://maps.geo.${region}.amazonaws.com/v2/styles/Hybrid/descriptor?key=${encodeURIComponent(
+        apiKey
+      )}`;
 
     const map =
       new maplibregl.Map({
@@ -89,50 +243,79 @@ function SafetyMap({
         style: styleUrl,
 
         center: [
-          longitude,
-          latitude,
+          Number(longitude),
+          Number(latitude),
         ],
 
-        zoom: 15.5,
+        zoom: 17.5,
+
+        pitch: 0,
+
+        bearing: 0,
       });
 
     mapRef.current = map;
 
     map.addControl(
-      new maplibregl.NavigationControl(),
+      new maplibregl.NavigationControl({
+        showCompass: true,
+        showZoom: true,
+      }),
       "top-right"
     );
 
-    // Victim marker
+    // --------------------------------
+    // VICTIM MARKER
+    // --------------------------------
+
     victimMarkerRef.current =
-      new maplibregl.Marker()
+      new maplibregl.Marker({
+        color: "#ef4444",
+      })
         .setLngLat([
-          longitude,
-          latitude,
+          Number(longitude),
+          Number(latitude),
         ])
         .setPopup(
-          new maplibregl.Popup().setHTML(
-            "<strong>🚨 Victim</strong><br/>Live emergency location"
-          )
+          new maplibregl.Popup({
+            offset: 20,
+          }).setHTML(`
+            <div style="font-family:Arial,sans-serif">
+              <strong style="color:#dc2626">
+                🚨 VICTIM LOCATION
+              </strong>
+              <br/>
+              Live emergency position
+            </div>
+          `)
         )
         .addTo(map);
 
     map.on("load", () => {
+      setMapStatus(
+        "Hybrid satellite map active"
+      );
+
+      map.resize();
+
+      // --------------------------------
+      // 250M SAFETY ZONE
+      // --------------------------------
+
       const safetyCircle =
         turf.circle(
           [
-            longitude,
-            latitude,
+            Number(longitude),
+            Number(latitude),
           ],
           0.25,
           {
-            steps: 80,
+            steps: 96,
             units:
               "kilometers",
           }
         );
 
-      // 250m circle
       map.addSource(
         "safety-radius",
         {
@@ -155,7 +338,7 @@ function SafetyMap({
             "#ef4444",
 
           "fill-opacity":
-            0.14,
+            0.13,
         },
       });
 
@@ -170,13 +353,19 @@ function SafetyMap({
 
         paint: {
           "line-color":
-            "#dc2626",
+            "#ef4444",
 
           "line-width": 3,
+
+          "line-opacity":
+            0.9,
         },
       });
 
-      // Empty route source
+      // --------------------------------
+      // WALKING ROUTE SOURCE
+      // --------------------------------
+
       map.addSource(
         "walking-route",
         {
@@ -191,7 +380,37 @@ function SafetyMap({
         }
       );
 
-      // Route line
+      // Dark outline so blue route
+      // remains visible over satellite
+      map.addLayer({
+        id:
+          "walking-route-outline",
+
+        type: "line",
+
+        source:
+          "walking-route",
+
+        layout: {
+          "line-join":
+            "round",
+
+          "line-cap":
+            "round",
+        },
+
+        paint: {
+          "line-color":
+            "#ffffff",
+
+          "line-width": 10,
+
+          "line-opacity":
+            0.9,
+        },
+      });
+
+      // Main rescue route
       map.addLayer({
         id:
           "walking-route-line",
@@ -214,9 +433,22 @@ function SafetyMap({
             "#2563eb",
 
           "line-width": 6,
+
+          "line-opacity": 1,
         },
       });
     });
+
+    map.on(
+      "error",
+      (event) => {
+        console.error(
+          "MapLibre / Amazon map error:",
+          event?.error ||
+            event
+        );
+      }
+    );
 
     return () => {
       nearbyMarkersRef.current.forEach(
@@ -250,13 +482,13 @@ function SafetyMap({
       mapRef.current = null;
     };
 
-    // Map intentionally created once.
+    // Map created once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // --------------------------------
-  // MOVE VICTIM WITHOUT RELOADING MAP
-  // --------------------------------
+  // ==================================================
+  // UPDATE VICTIM LOCATION
+  // ==================================================
 
   useEffect(() => {
     const map =
@@ -264,8 +496,8 @@ function SafetyMap({
 
     if (
       !map ||
-      !Number.isFinite(latitude) ||
-      !Number.isFinite(longitude)
+      !isValidCoordinate(latitude) ||
+      !isValidCoordinate(longitude)
     ) {
       return;
     }
@@ -275,8 +507,8 @@ function SafetyMap({
     ) {
       victimMarkerRef.current.setLngLat(
         [
-          longitude,
-          latitude,
+          Number(longitude),
+          Number(latitude),
         ]
       );
     }
@@ -284,12 +516,12 @@ function SafetyMap({
     const safetyCircle =
       turf.circle(
         [
-          longitude,
-          latitude,
+          Number(longitude),
+          Number(latitude),
         ],
         0.25,
         {
-          steps: 80,
+          steps: 96,
           units:
             "kilometers",
         }
@@ -320,24 +552,34 @@ function SafetyMap({
       );
     }
 
-    // Smoothly follow victim instead
-    // of recreating the whole map.
-    map.easeTo({
-      center: [
-        longitude,
-        latitude,
-      ],
+    // Victim-only screen:
+    // follow victim.
+    // Responder screen:
+    // route auto-fit handles viewport.
+    if (!responderLocation) {
+      map.easeTo({
+        center: [
+          Number(longitude),
+          Number(latitude),
+        ],
 
-      duration: 500,
-    });
+        zoom: Math.max(
+          map.getZoom(),
+          17
+        ),
+
+        duration: 600,
+      });
+    }
   }, [
     latitude,
     longitude,
+    responderLocation,
   ]);
 
-  // --------------------------------
-  // RESPONDER'S OWN MARKER
-  // --------------------------------
+  // ==================================================
+  // RESPONDER'S OWN LOCATION MARKER
+  // ==================================================
 
   useEffect(() => {
     const map =
@@ -348,7 +590,13 @@ function SafetyMap({
     }
 
     if (
-      !responderLocation
+      !responderLocation ||
+      !isValidCoordinate(
+        responderLocation.latitude
+      ) ||
+      !isValidCoordinate(
+        responderLocation.longitude
+      )
     ) {
       if (
         responderMarkerRef.current
@@ -363,8 +611,13 @@ function SafetyMap({
     }
 
     const coordinates = [
-      responderLocation.longitude,
-      responderLocation.latitude,
+      Number(
+        responderLocation.longitude
+      ),
+
+      Number(
+        responderLocation.latitude
+      ),
     ];
 
     if (
@@ -373,30 +626,46 @@ function SafetyMap({
       responderMarkerRef.current.setLngLat(
         coordinates
       );
-
-      return;
+    } else {
+      responderMarkerRef.current =
+        new maplibregl.Marker({
+          color: "#2563eb",
+        })
+          .setLngLat(
+            coordinates
+          )
+          .setPopup(
+            new maplibregl.Popup({
+              offset: 20,
+            }).setHTML(`
+              <div style="font-family:Arial,sans-serif">
+                <strong style="color:#1d4ed8">
+                  🏠 YOUR LOCATION
+                </strong>
+                <br/>
+                Verified responder
+              </div>
+            `)
+          )
+          .addTo(map);
     }
 
-    responderMarkerRef.current =
-      new maplibregl.Marker({
-        color: "#2563eb",
-      })
-        .setLngLat(
-          coordinates
-        )
-        .setPopup(
-          new maplibregl.Popup().setHTML(
-            "<strong>📍 Your Location</strong><br/>Verified responder"
-          )
-        )
-        .addTo(map);
+    fitCoordinates([
+      coordinates,
+      [
+        Number(longitude),
+        Number(latitude),
+      ],
+    ]);
   }, [
     responderLocation,
+    latitude,
+    longitude,
   ]);
 
-  // --------------------------------
-  // VICTIM-SIDE RESPONDER MARKERS
-  // --------------------------------
+  // ==================================================
+  // VICTIM-SIDE NEARBY RESPONDER MARKERS
+  // ==================================================
 
   useEffect(() => {
     const map =
@@ -425,7 +694,13 @@ function SafetyMap({
     responders
       .filter(
         (responder) =>
-          responder.insideRadius
+          responder.insideRadius &&
+          isValidCoordinate(
+            responder.latitude
+          ) &&
+          isValidCoordinate(
+            responder.longitude
+          )
       )
       .forEach(
         (responder) => {
@@ -441,25 +716,43 @@ function SafetyMap({
                   : "#16a34a",
             })
               .setLngLat([
-                responder.longitude,
-                responder.latitude,
+                Number(
+                  responder.longitude
+                ),
+
+                Number(
+                  responder.latitude
+                ),
               ])
               .setPopup(
-                new maplibregl.Popup().setHTML(
-                  `<strong>${
-                    isSecurity
-                      ? "🛡️"
-                      : "🏠"
-                  } ${
-                    responder.name
-                  }</strong><br/>
-                   ${
-                     responder.type
-                   }<br/>
-                   ${
-                     responder.distance
-                   } metres away`
-                )
+                new maplibregl.Popup({
+                  offset: 20,
+                }).setHTML(`
+                  <div style="font-family:Arial,sans-serif">
+                    <strong>
+                      ${
+                        isSecurity
+                          ? "🛡️"
+                          : "🏠"
+                      }
+                      ${
+                        responder.name
+                      }
+                    </strong>
+
+                    <br/>
+
+                    ${
+                      responder.type
+                    }
+
+                    <br/>
+
+                    ${
+                      responder.distance
+                    } metres away
+                  </div>
+                `)
               )
               .addTo(map);
 
@@ -472,9 +765,9 @@ function SafetyMap({
     responders,
   ]);
 
-  // --------------------------------
-  // AMAZON LOCATION WALKING ROUTE
-  // --------------------------------
+  // ==================================================
+  // AMAZON LOCATION PEDESTRIAN RESCUE ROUTE
+  // ==================================================
 
   useEffect(() => {
     const map =
@@ -483,9 +776,17 @@ function SafetyMap({
     if (
       !map ||
       !responderLocation ||
-      !apiKey
+      !apiKey ||
+      !isValidCoordinate(
+        responderLocation.latitude
+      ) ||
+      !isValidCoordinate(
+        responderLocation.longitude
+      ) ||
+      !isValidCoordinate(latitude) ||
+      !isValidCoordinate(longitude)
     ) {
-      setRouteInfo(null);
+      clearRoute();
 
       return;
     }
@@ -493,14 +794,19 @@ function SafetyMap({
     const requestId =
       ++routeRequestRef.current;
 
+    setRouteStatus(
+      "Calculating pedestrian rescue route..."
+    );
+
     async function updateRoute() {
       try {
         const response =
           await fetch(
-            `https://routes.geo.${region}.amazonaws.com/v2/routes?key=${apiKey}`,
+            `https://routes.geo.${region}.amazonaws.com/v2/routes?key=${encodeURIComponent(
+              apiKey
+            )}`,
             {
-              method:
-                "POST",
+              method: "POST",
 
               headers: {
                 "Content-Type":
@@ -510,17 +816,30 @@ function SafetyMap({
               body:
                 JSON.stringify({
                   Origin: [
-                    responderLocation.longitude,
-                    responderLocation.latitude,
+                    Number(
+                      responderLocation.longitude
+                    ),
+
+                    Number(
+                      responderLocation.latitude
+                    ),
                   ],
 
                   Destination: [
-                    longitude,
-                    latitude,
+                    Number(
+                      longitude
+                    ),
+
+                    Number(
+                      latitude
+                    ),
                   ],
 
                   TravelMode:
                     "Pedestrian",
+
+                  TravelStepType:
+                    "Default",
 
                   LegGeometryFormat:
                     "Simple",
@@ -532,16 +851,27 @@ function SafetyMap({
             }
           );
 
-        if (
-          !response.ok
-        ) {
+        if (!response.ok) {
           const errorText =
             await response.text();
 
           console.error(
-            "Route request failed:",
+            "Amazon Location route request failed:",
+            response.status,
             errorText
           );
+
+          if (
+            requestId ===
+            routeRequestRef.current
+          ) {
+            setRouteStatus(
+              `Route unavailable (${response.status})`
+            );
+
+            setRouteInfo(null);
+            setRouteSteps([]);
+          }
 
           return;
         }
@@ -549,8 +879,11 @@ function SafetyMap({
         const data =
           await response.json();
 
-        // Ignore an older route request
-        // if a newer GPS update arrived.
+        console.log(
+          "Amazon Location route response:",
+          data
+        );
+
         if (
           requestId !==
           routeRequestRef.current
@@ -561,87 +894,257 @@ function SafetyMap({
         const route =
           data.Routes?.[0];
 
-        const leg =
-          route?.Legs?.[0];
-
-        const coordinates =
-          leg?.Geometry
-            ?.LineString;
-
-        if (
-          !coordinates ||
-          coordinates.length <
-            2
-        ) {
-          console.log(
-            "No walking route geometry returned."
+        if (!route) {
+          setRouteStatus(
+            "No pedestrian route was returned."
           );
+
+          clearRoute();
 
           return;
         }
 
-        const routeGeoJson =
-          {
-            type:
-              "Feature",
+        const legs =
+          Array.isArray(
+            route.Legs
+          )
+            ? route.Legs
+            : [];
 
-            geometry: {
-              type:
-                "LineString",
+        // --------------------------------
+        // COMBINE ALL ROUTE GEOMETRY
+        // --------------------------------
 
-              coordinates,
-            },
+        const coordinates = [];
 
-            properties: {},
-          };
+        legs.forEach(
+          (leg) => {
+            const legCoordinates =
+              leg?.Geometry
+                ?.LineString;
 
-        const updateRouteSource =
-          () => {
-            const source =
-              map.getSource(
-                "walking-route"
-              );
+            if (
+              !Array.isArray(
+                legCoordinates
+              )
+            ) {
+              return;
+            }
 
-            if (source) {
-              source.setData(
-                routeGeoJson
+            legCoordinates.forEach(
+              (
+                coordinate,
+                index
+              ) => {
+                // Avoid duplicate point
+                // between consecutive legs.
+                if (
+                  coordinates.length >
+                    0 &&
+                  index === 0
+                ) {
+                  const previous =
+                    coordinates[
+                      coordinates.length -
+                        1
+                    ];
+
+                  if (
+                    previous?.[0] ===
+                      coordinate?.[0] &&
+                    previous?.[1] ===
+                      coordinate?.[1]
+                  ) {
+                    return;
+                  }
+                }
+
+                coordinates.push(
+                  coordinate
+                );
+              }
+            );
+          }
+        );
+
+        if (
+          coordinates.length < 2
+        ) {
+          console.error(
+            "No Simple LineString route geometry returned.",
+            data
+          );
+
+          setRouteStatus(
+            "Route calculated, but route geometry was unavailable."
+          );
+
+          clearRoute();
+
+          return;
+        }
+
+        // --------------------------------
+        // ROUTE DISTANCE + TIME
+        // --------------------------------
+
+        const routeSummary =
+          route?.Summary;
+
+        const firstLegOverview =
+          legs?.[0]
+            ?.PedestrianLegDetails
+            ?.Summary?.Overview;
+
+        let distance =
+          routeSummary?.Distance ??
+          firstLegOverview?.Distance;
+
+        let duration =
+          routeSummary?.Duration ??
+          firstLegOverview?.Duration;
+
+        // Fallback: total the
+        // pedestrian travel steps.
+        if (
+          !Number.isFinite(
+            Number(distance)
+          ) ||
+          !Number.isFinite(
+            Number(duration)
+          )
+        ) {
+          let calculatedDistance = 0;
+          let calculatedDuration = 0;
+
+          legs.forEach(
+            (leg) => {
+              const steps =
+                leg
+                  ?.PedestrianLegDetails
+                  ?.TravelSteps ||
+                [];
+
+              steps.forEach(
+                (step) => {
+                  calculatedDistance +=
+                    Number(
+                      step.Distance ||
+                        0
+                    );
+
+                  calculatedDuration +=
+                    Number(
+                      step.Duration ||
+                        0
+                    );
+                }
               );
             }
+          );
+
+          distance =
+            calculatedDistance;
+
+          duration =
+            calculatedDuration;
+        }
+
+        // --------------------------------
+        // HUMAN-READABLE DIRECTIONS
+        // --------------------------------
+
+        const directions = [];
+
+        legs.forEach(
+          (leg) => {
+            const steps =
+              leg
+                ?.PedestrianLegDetails
+                ?.TravelSteps ||
+              [];
+
+            steps.forEach(
+              (step) => {
+                if (
+                  step?.Instruction
+                ) {
+                  directions.push({
+                    instruction:
+                      step.Instruction,
+
+                    distance:
+                      Number(
+                        step.Distance ||
+                          0
+                      ),
+
+                    duration:
+                      Number(
+                        step.Duration ||
+                          0
+                      ),
+                  });
+                }
+              }
+            );
+          }
+        );
+
+        // --------------------------------
+        // DRAW + AUTO ZOOM
+        // --------------------------------
+
+        const drawRoute =
+          () => {
+            updateRouteLayer(
+              coordinates
+            );
           };
 
         if (
           map.isStyleLoaded()
         ) {
-          updateRouteSource();
+          drawRoute();
         } else {
           map.once(
             "load",
-            updateRouteSource
+            drawRoute
           );
         }
 
-        const summary =
-          leg
-            ?.PedestrianLegDetails
-            ?.Summary
-            ?.Overview ||
-          leg?.Summary
-            ?.Overview;
+        setRouteInfo({
+          distance:
+            Number(distance) || 0,
 
-        if (summary) {
-          setRouteInfo({
-            distance:
-              summary.Distance,
+          duration:
+            Number(duration) || 0,
+        });
 
-            duration:
-              summary.Duration,
-          });
-        }
+        setRouteSteps(
+          directions
+        );
+
+        setRouteStatus(
+          "Pedestrian rescue route ready"
+        );
       } catch (error) {
         console.error(
           "Walking route error:",
           error
         );
+
+        if (
+          requestId ===
+          routeRequestRef.current
+        ) {
+          setRouteStatus(
+            "Unable to calculate rescue route."
+          );
+
+          setRouteInfo(null);
+          setRouteSteps([]);
+        }
       }
     }
 
@@ -663,92 +1166,500 @@ function SafetyMap({
     region,
   ]);
 
-  // --------------------------------
+  // ==================================================
   // UI
-  // --------------------------------
+  // ==================================================
 
   return (
-    <div>
+    <div
+      style={{
+        width: "100%",
+      }}
+    >
       <div
-        ref={mapContainer}
         style={{
-          width: "100%",
-          height: "400px",
-          borderRadius:
-            "16px",
-          overflow:
-            "hidden",
+          position: "relative",
         }}
-      />
+      >
+        <div
+          ref={mapContainer}
+          style={{
+            width: "100%",
 
-      {routeInfo && (
+            height: "430px",
+
+            borderRadius:
+              "16px",
+
+            overflow:
+              "hidden",
+
+            background:
+              "#0f172a",
+          }}
+        />
+
+        <div
+          style={{
+            position:
+              "absolute",
+
+            left: "12px",
+
+            top: "12px",
+
+            zIndex: 5,
+
+            padding:
+              "8px 11px",
+
+            borderRadius:
+              "10px",
+
+            background:
+              "rgba(15,23,42,0.88)",
+
+            color: "white",
+
+            fontSize:
+              "11px",
+
+            fontWeight: 800,
+
+            boxShadow:
+              "0 4px 14px rgba(0,0,0,0.25)",
+          }}
+        >
+          🛰 HYBRID SATELLITE
+        </div>
+
+        <div
+          style={{
+            position:
+              "absolute",
+
+            left: "12px",
+
+            bottom: "12px",
+
+            zIndex: 5,
+
+            padding:
+              "7px 10px",
+
+            borderRadius:
+              "9px",
+
+            background:
+              "rgba(255,255,255,0.92)",
+
+            color:
+              "#0f172a",
+
+            fontSize:
+              "10px",
+
+            fontWeight: 700,
+
+            maxWidth:
+              "230px",
+          }}
+        >
+          {mapStatus}
+        </div>
+      </div>
+
+      {responderLocation && (
         <div
           style={{
             marginTop:
               "12px",
 
             padding:
-              "14px",
+              "15px",
 
             background:
-              "white",
+              "#eff6ff",
+
+            border:
+              "1px solid #bfdbfe",
 
             borderRadius:
-              "12px",
-
-            textAlign:
-              "center",
-
-            boxShadow:
-              "0 3px 12px rgba(0,0,0,0.1)",
+              "14px",
           }}
         >
-          <strong>
-            🚶 WALKING ROUTE
-          </strong>
-
           <div
             style={{
-              marginTop:
-                "6px",
+              display:
+                "flex",
 
-              fontSize:
-                "18px",
+              justifyContent:
+                "space-between",
 
-              fontWeight:
-                "bold",
+              gap: "12px",
+
+              alignItems:
+                "center",
+
+              flexWrap:
+                "wrap",
             }}
           >
-            {Math.round(
-              routeInfo.distance
-            )}{" "}
-            m
-            {" • "}
-            ~
-            {Math.max(
-              1,
-              Math.ceil(
-                routeInfo.duration /
-                  60
-              )
-            )}{" "}
-            min
+            <div>
+              <strong
+                style={{
+                  color:
+                    "#1e3a8a",
+
+                  fontSize:
+                    "14px",
+                }}
+              >
+                🧭 RESCUE DIRECTIONS
+              </strong>
+
+              <div
+                style={{
+                  marginTop:
+                    "4px",
+
+                  color:
+                    routeStatus.includes(
+                      "ready"
+                    )
+                      ? "#166534"
+                      : "#475569",
+
+                  fontSize:
+                    "12px",
+
+                  fontWeight:
+                    700,
+                }}
+              >
+                {routeStatus}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={
+                recenterRescueRoute
+              }
+              style={{
+                border:
+                  "1px solid #93c5fd",
+
+                background:
+                  "white",
+
+                color:
+                  "#1d4ed8",
+
+                padding:
+                  "8px 10px",
+
+                borderRadius:
+                  "9px",
+
+                fontSize:
+                  "10px",
+
+                fontWeight:
+                  800,
+
+                cursor:
+                  "pointer",
+              }}
+            >
+              ⛶ SHOW FULL ROUTE
+            </button>
           </div>
 
+          {routeInfo && (
+            <div
+              style={{
+                display:
+                  "grid",
+
+                gridTemplateColumns:
+                  "repeat(2, minmax(0, 1fr))",
+
+                gap: "10px",
+
+                marginTop:
+                  "12px",
+              }}
+            >
+              <div
+                style={{
+                  background:
+                    "white",
+
+                  padding:
+                    "12px",
+
+                  borderRadius:
+                    "11px",
+
+                  textAlign:
+                    "center",
+                }}
+              >
+                <div
+                  style={{
+                    color:
+                      "#64748b",
+
+                    fontSize:
+                      "10px",
+
+                    fontWeight:
+                      800,
+                  }}
+                >
+                  WALKING DISTANCE
+                </div>
+
+                <div
+                  style={{
+                    marginTop:
+                      "4px",
+
+                    color:
+                      "#0f172a",
+
+                    fontSize:
+                      "20px",
+
+                    fontWeight:
+                      900,
+                  }}
+                >
+                  {Math.round(
+                    routeInfo.distance
+                  )}{" "}
+                  m
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background:
+                    "white",
+
+                  padding:
+                    "12px",
+
+                  borderRadius:
+                    "11px",
+
+                  textAlign:
+                    "center",
+                }}
+              >
+                <div
+                  style={{
+                    color:
+                      "#64748b",
+
+                    fontSize:
+                      "10px",
+
+                    fontWeight:
+                      800,
+                  }}
+                >
+                  EST. WALKING TIME
+                </div>
+
+                <div
+                  style={{
+                    marginTop:
+                      "4px",
+
+                    color:
+                      "#0f172a",
+
+                    fontSize:
+                      "20px",
+
+                    fontWeight:
+                      900,
+                  }}
+                >
+                  ~
+                  {Math.max(
+                    1,
+                    Math.ceil(
+                      routeInfo.duration /
+                        60
+                    )
+                  )}{" "}
+                  min
+                </div>
+              </div>
+            </div>
+          )}
+
+          {routeSteps.length >
+            0 && (
+            <div
+              style={{
+                marginTop:
+                  "12px",
+
+                background:
+                  "white",
+
+                borderRadius:
+                  "12px",
+
+                padding:
+                  "12px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize:
+                    "11px",
+
+                  fontWeight:
+                    900,
+
+                  color:
+                    "#0f172a",
+
+                  marginBottom:
+                    "8px",
+                }}
+              >
+                WALKING DIRECTIONS
+              </div>
+
+              <div
+                style={{
+                  display:
+                    "grid",
+
+                  gap: "7px",
+                }}
+              >
+                {routeSteps
+                  .slice(
+                    0,
+                    8
+                  )
+                  .map(
+                    (
+                      step,
+                      index
+                    ) => (
+                      <div
+                        key={
+                          index
+                        }
+                        style={{
+                          display:
+                            "grid",
+
+                          gridTemplateColumns:
+                            "24px 1fr auto",
+
+                          gap:
+                            "8px",
+
+                          alignItems:
+                            "start",
+
+                          fontSize:
+                            "11px",
+
+                          color:
+                            "#334155",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width:
+                              "22px",
+
+                            height:
+                              "22px",
+
+                            borderRadius:
+                              "50%",
+
+                            background:
+                              "#dbeafe",
+
+                            color:
+                              "#1d4ed8",
+
+                            display:
+                              "grid",
+
+                            placeItems:
+                              "center",
+
+                            fontWeight:
+                              900,
+
+                            fontSize:
+                              "10px",
+                          }}
+                        >
+                          {index +
+                            1}
+                        </div>
+
+                        <div>
+                          {
+                            step.instruction
+                          }
+                        </div>
+
+                        <div
+                          style={{
+                            color:
+                              "#64748b",
+
+                            whiteSpace:
+                              "nowrap",
+                          }}
+                        >
+                          {Math.round(
+                            step.distance
+                          )}{" "}
+                          m
+                        </div>
+                      </div>
+                    )
+                  )}
+              </div>
+            </div>
+          )}
+
           <div
             style={{
               marginTop:
-                "5px",
+                "10px",
 
               fontSize:
-                "13px",
+                "10px",
 
-              opacity:
-                0.7,
+              color:
+                "#64748b",
+
+              lineHeight:
+                1.5,
             }}
           >
-            Live walking
-            route to victim
+            🔴 Red marker = victim
+            &nbsp; • &nbsp;
+            🔵 Blue marker = responder
+            &nbsp; • &nbsp;
+            Blue line = pedestrian rescue route
           </div>
         </div>
       )}
